@@ -13,29 +13,25 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../supabase";
 import styles from "../styles/LoginStyles";
 
-// Komponen utama untuk layar login autentikasi pengguna.
 export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Memvalidasi data input dan memulai proses autentikasi ke database.
   const handleLogin = async () => {
     if (!username || !password)
       return Alert.alert("Peringatan", "Harap isi Nama dan Password");
 
     setLoading(true);
     try {
-      const formatEmail = `${username.trim().toLowerCase()}@kebun.com`;
+      const formatEmail = `${username.toLowerCase().replace(/[^a-z0-9]/g, "")}@kebun.com`;
       const { error } = await supabase.auth.signInWithPassword({
         email: formatEmail,
         password,
       });
+
       if (error)
-        Alert.alert(
-          "Gagal Masuk",
-          "Informasi akun salah atau tidak terdaftar.",
-        );
+        Alert.alert("Gagal Masuk", "Nama Pengguna atau Kata Sandi salah.");
     } catch (err) {
       Alert.alert("Kesalahan Sistem", "Tidak dapat terhubung ke server.");
     } finally {
@@ -59,11 +55,11 @@ export default function LoginScreen() {
             <Text style={styles.label}>Nama Pengguna</Text>
             <TextInput
               style={styles.input}
-              placeholder="Nama Akun"
+              placeholder="Contoh: THEOFILUS YOTO"
               placeholderTextColor="#94A3B8"
               value={username}
               onChangeText={setUsername}
-              autoCapitalize="none"
+              autoCapitalize="characters"
               autoCorrect={false}
             />
           </View>
@@ -72,11 +68,12 @@ export default function LoginScreen() {
             <Text style={styles.label}>Kata Sandi</Text>
             <TextInput
               style={styles.input}
-              placeholder="Kata Sandi"
+              placeholder="Contoh: THEO-OA"
               placeholderTextColor="#94A3B8"
               secureTextEntry
               value={password}
               onChangeText={setPassword}
+              autoCapitalize="characters"
             />
           </View>
 

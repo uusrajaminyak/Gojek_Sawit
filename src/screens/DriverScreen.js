@@ -160,6 +160,9 @@ export default function DriverScreen() {
               payload.eventType === "UPDATE"
             ) {
               const updatedOrder = payload.new;
+
+              if (updatedOrder.driver_id !== userId) return;
+
               if (
                 updatedOrder.status === "assigned" ||
                 updatedOrder.status === "in_progress"
@@ -331,7 +334,10 @@ export default function DriverScreen() {
       mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.5,
+      quality: 0.2,
+      allowsMultipleSelection: false,
+      maxWidth: 800,
+      maxHeight: 600,
       base64: true,
     });
 

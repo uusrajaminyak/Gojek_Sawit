@@ -15,7 +15,6 @@ import { Picker } from "@react-native-picker/picker";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { supabase } from "../supabase";
 import NetInfo from "@react-native-community/netinfo";
-import { Ionicons } from "@expo/vector-icons";
 
 import styles from "../styles/OrderStyles";
 import { fetchKeraniData } from "../utils/orderLogic";
@@ -36,15 +35,17 @@ const AFDELING_OPTIONS = [
   "OL",
   "OM",
   "ON",
+  "BLS",
+  "GWS",
+  "KS",
+  "TPB",
 ];
 
-// Mengatur antarmuka pesanan kerani termasuk penempatan order, pemantauan status aktif, dan inspeksi lapangan.
 export default function OrderScreen() {
   const [activeTab, setActiveTab] = useState("buat");
   const [permission, requestPermission] = useCameraPermissions();
   const [isConnected, setIsConnected] = useState(true);
 
-  // Status Form Pemesanan Order
   const [isScanning, setIsScanning] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
   const [nabBarcode, setNabBarcode] = useState("");
@@ -59,7 +60,6 @@ export default function OrderScreen() {
   const [activeOrders, setActiveOrders] = useState([]);
   const [historyOrders, setHistoryOrders] = useState([]);
 
-  // Status Form Inspeksi TPH
   const [inspeksiStep, setInspeksiStep] = useState(1);
   const [helper1, setHelper1] = useState("");
   const [helper2, setHelper2] = useState("");
@@ -70,20 +70,17 @@ export default function OrderScreen() {
   const [isScanningTph, setIsScanningTph] = useState(null);
   const [isSubmittingInspeksi, setIsSubmittingInspeksi] = useState(false);
 
-  // Mengambil identifikasi kerani untuk mengamankan isolasi data.
   const getUserId = useCallback(async () => {
     const { data } = await supabase.auth.getUser();
     return data?.user?.id ?? null;
   }, []);
 
-  // Memperbarui daftar pesanan dan riwayat untuk menjaga sinkronisasi antarmuka.
   const refreshData = useCallback(async (userId) => {
     const { active, history } = await fetchKeraniData(userId);
     setActiveOrders(active);
     setHistoryOrders(history);
   }, []);
 
-  // Memantau perubahan status konektivitas jaringan secara berkesinambungan.
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
       setIsConnected(state.isConnected);
@@ -94,7 +91,6 @@ export default function OrderScreen() {
     return () => unsubscribe();
   }, []);
 
-  // Menyusun struktur data awal dan memantau pembaruan basis data terpusat.
   useEffect(() => {
     let mounted = true;
     let orderSub;
@@ -133,7 +129,6 @@ export default function OrderScreen() {
     };
   }, [getUserId, refreshData]);
 
-  // Mengambil opsi blok paska penyesuaian area afdeling.
   const fetchBlok = useCallback(async (selectedAfdeling) => {
     setLoadingBlok(true);
     try {
@@ -159,7 +154,6 @@ export default function OrderScreen() {
     fetchBlok(afdeling);
   }, [afdeling, fetchBlok]);
 
-  // Mengontrol otorisasi kamera perangkatkeras untuk pemindaian NAB.
   const handleMulaiScan = () => {
     if (!permission) return;
     if (!permission.granted) {
@@ -169,7 +163,6 @@ export default function OrderScreen() {
     setIsScanning(true);
   };
 
-  // Mengontrol otorisasi kamera perangkat keras untuk pemindaian TPH.
   const handleMulaiScanTph = (tipe) => {
     if (!permission) return;
     if (!permission.granted) {
@@ -179,13 +172,11 @@ export default function OrderScreen() {
     setIsScanningTph(tipe);
   };
 
-  // Memeriksa struktur karakter hasil pindaian berdasarkan standar perusahaan.
   const validateBarcode = (data) => {
     const pattern = /^[A-Z]\d{6}$/i;
     return pattern.test(data.trim());
   };
 
-  // Memproses data hasil pindai kamera optik berdasarkan konteks pemindaian aktif.
   const handleGlobalBarcodeScanned = ({ data }) => {
     if (isScanning) {
       setIsScanning(false);
@@ -212,7 +203,6 @@ export default function OrderScreen() {
     }
   };
 
-  // Memvalidasi parameter masukan dan menugaskan pekerjaan ke armada prioritas.
   const handleSubmit = async () => {
     if (!hasScanned)
       return Alert.alert(
@@ -225,6 +215,15 @@ export default function OrderScreen() {
         "Pastikan afdeling dan blok sudah dipilih.",
       );
 
+    const afdUpper = afdeling.toUpperCase();
+
+    if (["BLS", "GWS", "KS", "TPB"].includes(afdUpper)) {
+      return Alert.alert(
+        "Akses Ditolak",
+        "Area kontraktor tidak menggunakan armada internal. Gunakan menu 'Inspeksi' untuk area ini.",
+      );
+    }
+
     const ton = parseFloat(estimasiTonase.replace(",", "."));
     if (Number.isNaN(ton) || ton <= 0)
       return Alert.alert("Informasi", "Masukkan estimasi muatan yang sesuai.");
@@ -232,11 +231,45 @@ export default function OrderScreen() {
     setSubmitting(true);
     try {
       const userId = await getUserId();
-      const { data: availableDrivers } = await supabase
+
+      const { data: cekDuplikat } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("nab_barcode", nabBarcode)
+        .maybeSingle();
+
+      if (cekDuplikat) {
+        Alert.alert(
+          "Duplikasi Ditolak",
+          "NAB ini sudah pernah diinput sebelumnya.",
+        );
+        setSubmitting(false);
+        return;
+      }
+
+      let allowedUnits = [];
+
+      if (["OD", "OE", "OF", "OJ", "OK"].includes(afdUpper)) {
+        allowedUnits = ["HF31", "HF32"];
+      } else if (["OB", "OC"].includes(afdUpper)) {
+        allowedUnits = ["HL14", "HL22", "HL24", "HL25"];
+      } else if (["OA", "OM", "ON"].includes(afdUpper)) {
+        allowedUnits = ["HL19", "HL21", "HL26", "HL17", "HL30"];
+      } else if (["OG", "OH", "OI", "OL"].includes(afdUpper)) {
+        allowedUnits = ["HL04", "HL06", "HL07", "HL09", "HL11", "HL20"];
+      }
+
+      let queryDrivers = supabase
         .from("profiles")
         .select("id, nama_lengkap, estimasi_gaji_bulan_ini")
         .eq("role", "driver")
-        .eq("is_online", true)
+        .eq("is_online", true);
+
+      if (allowedUnits.length > 0) {
+        queryDrivers = queryDrivers.in("unit_kendaraan", allowedUnits);
+      }
+
+      const { data: availableDrivers } = await queryDrivers
         .order("estimasi_gaji_bulan_ini", { ascending: true })
         .limit(1);
 
@@ -260,12 +293,12 @@ export default function OrderScreen() {
       if (assignedDriverId) {
         Alert.alert(
           "Order Diproses",
-          `Tugas telah dialokasikan kepada ${driverName}. Anda bisa memantaunya di daftar pesanan.`,
+          `Tugas telah dialokasikan kepada ${driverName}.`,
         );
       } else {
         Alert.alert(
           "Masuk Antrean",
-          "Belum ada supir yang bersiaga. Order masuk ke dalam antrean tunggu.",
+          "Belum ada supir yang sesuai bersiaga. Order masuk ke dalam antrean tunggu.",
         );
       }
 
@@ -279,7 +312,6 @@ export default function OrderScreen() {
     }
   };
 
-  // Menyiapkan baris masukan hasil inspeksi berdasarkan total TPH yang dimasukkan.
   const handleGenerateTphRows = () => {
     const num = parseInt(jumlahTphInput);
     if (isNaN(num) || num <= 0)
@@ -293,14 +325,12 @@ export default function OrderScreen() {
     setInspeksiStep(4);
   };
 
-  // Memperbarui properti spesifik pada baris TPH yang sedang diubah.
   const updateTphRow = (id, field, value) => {
     setListTph((prev) =>
       prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
     );
   };
 
-  // Memvalidasi dan mengirimkan keseluruhan data hasil inspeksi lapangan.
   const handleFinishInspeksi = async () => {
     if (!tphAkhir)
       return Alert.alert(
@@ -345,7 +375,7 @@ export default function OrderScreen() {
           "Berhasil",
           res.mode === "online"
             ? "Data inspeksi berhasil dikirim ke server."
-            : "Sinyal terputus. Data diamankan di perangkat dan akan dikirim otomatis saat jaringan pulih.",
+            : "Data diamankan di perangkat.",
         );
         resetInspeksi();
       } else {
@@ -361,7 +391,6 @@ export default function OrderScreen() {
     }
   };
 
-  // Mengembalikan formulir inspeksi TPH ke kondisi awal.
   const resetInspeksi = () => {
     setInspeksiStep(1);
     setHelper1("");
@@ -372,7 +401,6 @@ export default function OrderScreen() {
     setListTph([]);
   };
 
-  // Menutup saluran sesi kerja berjalan.
   const handleLogout = async () => {
     Alert.alert("Keluar", "Anda yakin ingin keluar dari aplikasi?", [
       { text: "Batal", style: "cancel" },
@@ -384,7 +412,6 @@ export default function OrderScreen() {
     ]);
   };
 
-  // Menerjemahkan kode status pangkalan data ke dalam bahasa operasional.
   const getStatusText = (status) => {
     switch (status) {
       case "pending":
@@ -437,7 +464,7 @@ export default function OrderScreen() {
   });
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -591,10 +618,7 @@ export default function OrderScreen() {
                   Order Aktif: {activeOrders.length}
                 </Text>
                 {activeOrders.length === 0 ? (
-                  <Text style={styles.emptyText}>
-                    Belum ada order aktif. Pesanan yang sudah dibuat akan muncul
-                    di sini
-                  </Text>
+                  <Text style={styles.emptyText}>Belum ada order aktif.</Text>
                 ) : (
                   activeOrders.map((order) => (
                     <View key={order.id} style={styles.activeCard}>
@@ -938,7 +962,6 @@ export default function OrderScreen() {
           )}
         </ScrollView>
 
-        {/* Bilah Navigasi Dipindahkan ke Paling Bawah (di luar ScrollView) */}
         <View style={styles.tabBar}>
           {["buat", "riwayat", "inspeksi"].map((t) => (
             <TouchableOpacity
