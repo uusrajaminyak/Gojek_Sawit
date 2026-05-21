@@ -43,4 +43,4 @@ app-example
 /android
 
 # database
-/src/supabase.js
+*.env
