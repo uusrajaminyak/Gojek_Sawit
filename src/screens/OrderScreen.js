@@ -312,6 +312,60 @@ export default function OrderScreen() {
     }
   };
 
+  const handleCancelOrderKerani = async (orderId, driverId) => {
+    if (!isConnected) {
+      return Alert.alert(
+        "Koneksi Gagal",
+        "Pembatalan unit rusak memerlukan jaringan internet aktif.",
+      );
+    }
+
+    Alert.alert(
+      "Konfirmasi Unit Rusak",
+      "Apakah Anda yakin ingin membatalkan tugas ini? Unit truk supir akan otomatis dinonaktifkan dari sistem penugasan.",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Ya, Truk Rusak",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              if (driverId) {
+                await supabase
+                  .from("profiles")
+                  .update({ is_online: false })
+                  .eq("id", driverId);
+              }
+
+              const { error } = await supabase
+                .from("orders")
+                .update({
+                  status: "pending",
+                  driver_id: null,
+                  started_at: null,
+                })
+                .eq("id", orderId);
+
+              if (error) throw error;
+
+              Alert.alert(
+                "Berhasil",
+                "Tugas dibatalkan. Order dikembalikan ke antrean utama dan unit dinonaktifkan sementara",
+              );
+              const userId = await getUserId();
+              await refreshData(userId);
+            } catch (err) {
+              Alert.alert(
+                "Kegagalan Sistem",
+                "Gagal merubah status penugasan di server.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleGenerateTphRows = () => {
     const num = parseInt(jumlahTphInput);
     if (isNaN(num) || num <= 0)
@@ -464,11 +518,37 @@ export default function OrderScreen() {
   });
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "left", "right", "bottom"]}
+    >
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
+        <View style={styles.tabBar}>
+          {["buat", "riwayat", "inspeksi"].map((t) => (
+            <TouchableOpacity
+              key={t}
+              onPress={() => setActiveTab(t)}
+              style={[styles.tabItem, activeTab === t && styles.tabActive]}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === t && styles.tabTextActive,
+                ]}
+              >
+                {t === "buat"
+                  ? "Order"
+                  : t === "riwayat"
+                    ? "Riwayat"
+                    : "Inspeksi"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -632,6 +712,32 @@ export default function OrderScreen() {
                       <Text style={styles.orderInfo}>
                         Estimasi Muatan: {order.estimasi_tonase} Ton
                       </Text>
+
+                      {/* IMPLEMENTASI UTAMA FITUR 3: Tombol Pembatalan Darurat */}
+                      {["assigned", "in_progress"].includes(order.status) && (
+                        <TouchableOpacity
+                          style={{
+                            marginTop: 12,
+                            backgroundColor: "#EF4444",
+                            padding: 10,
+                            borderRadius: 8,
+                            alignItems: "center",
+                          }}
+                          onPress={() =>
+                            handleCancelOrderKerani(order.id, order.driver_id)
+                          }
+                        >
+                          <Text
+                            style={{
+                              color: "#FFF",
+                              fontWeight: "bold",
+                              fontSize: 13,
+                            }}
+                          >
+                            Batalkan (Unit Rusak)
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   ))
                 )}
@@ -961,29 +1067,6 @@ export default function OrderScreen() {
             </View>
           )}
         </ScrollView>
-
-        <View style={styles.tabBar}>
-          {["buat", "riwayat", "inspeksi"].map((t) => (
-            <TouchableOpacity
-              key={t}
-              onPress={() => setActiveTab(t)}
-              style={[styles.tabItem, activeTab === t && styles.tabActive]}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === t && styles.tabTextActive,
-                ]}
-              >
-                {t === "buat"
-                  ? "Order"
-                  : t === "riwayat"
-                    ? "Riwayat"
-                    : "Inspeksi"}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
