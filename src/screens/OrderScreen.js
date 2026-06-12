@@ -69,6 +69,7 @@ export default function OrderScreen() {
   const [listTph, setListTph] = useState([]);
   const [isScanningTph, setIsScanningTph] = useState(null);
   const [isSubmittingInspeksi, setIsSubmittingInspeksi] = useState(false);
+  const [keraniName, setKeraniName] = useState("");
 
   const getUserId = useCallback(async () => {
     const { data } = await supabase.auth.getUser();
@@ -101,6 +102,13 @@ export default function OrderScreen() {
         if (mounted) setInitialLoading(false);
         return;
       }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("nama_lengkap")
+        .eq("id", userId)
+        .single();
+      if (mounted && profile) setKeraniName(profile.nama_lengkap);
 
       await refreshData(userId);
       if (mounted) setInitialLoading(false);
@@ -224,9 +232,11 @@ export default function OrderScreen() {
       );
     }
 
-    const ton = parseFloat(estimasiTonase.replace(",", "."));
-    if (Number.isNaN(ton) || ton <= 0)
+    const kg = parseFloat(estimasiTonase.replace(",", "."));
+    if (Number.isNaN(kg) || kg <= 0)
       return Alert.alert("Informasi", "Masukkan estimasi muatan yang sesuai.");
+
+    const ton = kg / 1000;
 
     setSubmitting(true);
     try {
@@ -558,6 +568,9 @@ export default function OrderScreen() {
             <>
               <View style={styles.headerContainer}>
                 <Text style={styles.headerTitle}>Dashboard Kerani</Text>
+                <Text style={{ fontSize: 16, color: "#64748B", marginTop: 4 }}>
+                  Halo, {keraniName || "Memuat..."}
+                </Text>
               </View>
 
               {!isConnected && (
@@ -656,13 +669,13 @@ export default function OrderScreen() {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Estimasi Muatan (Ton)</Text>
+                  <Text style={styles.label}>Estimasi Muatan (Kg)</Text>
                   <TextInput
                     style={[
                       styles.textInput,
                       isFocused && styles.textInputFocused,
                     ]}
-                    placeholder="Contoh: 5"
+                    placeholder="Contoh: 5000"
                     placeholderTextColor="#94A3B8"
                     keyboardType="numeric"
                     value={estimasiTonase}

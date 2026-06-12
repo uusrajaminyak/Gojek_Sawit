@@ -55,6 +55,8 @@ export default function DriverScreen() {
     totalGaji: 0,
   });
   const [rekapBulanIni, setRekapBulanIni] = useState([]);
+  const [driverName, setDriverName] = useState("");
+  const [acceptedOrders, setAcceptedOrders] = useState({});
 
   // Komponen Kamera Pemindai
   const [permission, requestPermission] = useCameraPermissions();
@@ -87,9 +89,14 @@ export default function DriverScreen() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("is_online")
+        .select("is_online, nama_lengkap")
         .eq("id", userId)
         .single();
+
+      if (mounted && profile) {
+        setIsOnline(profile.is_online);
+        setDriverName(profile.nama_lengkap);
+      }
       if (profile?.is_online) await prosesOrderPending(userId);
 
       const { data: orders } = await supabase
@@ -258,6 +265,88 @@ export default function DriverScreen() {
     setUpdating(false);
   };
 
+  useEffect(() => {
+    const responseSub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const data = response.notification.request.content.data;
+        if (data?.type === "cek_perjalanan")
+          munculkanAlertKonfirmasi(data.orderId);
+      },
+    );
+    const foregroundSub = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        const data = notification.request.content.data;
+        if (data?.type === "cek_perjalanan")
+          munculkanAlertKonfirmasi(data.orderId);
+      },
+    );
+    return () => {
+      responseSub.remove();
+      foregroundSub.remove();
+    };
+  }, []);
+
+  const munculkanAlertKonfirmasi = (orderId) => {
+    Alert.alert("Cek Status", "Apakah Anda sedang menuju bin?", [
+      { text: "Ya", onPress: () => jadwalkanNotifikasi30Menit(orderId) },
+      {
+        text: "Tidak",
+        onPress: () => {
+          Alert.alert("Pembatalan", "Apakah Anda ingin membatalkan order?", [
+            { text: "Batal", style: "cancel" },
+            {
+              text: "Ya, Batalkan",
+              style: "destructive",
+              onPress: () => handleTolakOrder(orderId),
+            },
+          ]);
+        },
+      },
+    ]);
+  };
+
+  const jadwalkanNotifikasi30Menit = async (orderId) => {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Pengecekan Rutin",
+        body: "Sistem mendeteksi Anda belum sampai. Ketuk untuk konfirmasi status perjalanan.",
+        data: { orderId, type: "cek_perjalanan" },
+        sound: true,
+      },
+      trigger: { seconds: 30 * 60 },
+    });
+  };
+
+  const handleTerimaOrder = async (orderId) => {
+    setAcceptedOrderS((prev) => ({ ...prev, [orderId]: true }));
+    jadwalkanNotifikasi30Menit(orderId);
+    Alert.alert(
+      "Tugas Diterima",
+      "Argo perjalanan 30 menit dimulai. Segera menuju lokasi.",
+    );
+  };
+
+  const handleTolakOrder = async (orderId) => {
+    setUpdatingOrderId(orderId);
+    try {
+      await supabase
+        .from("orders")
+        .update({ status: "pending", driver_id: null })
+        .eq("id", orderId);
+      setActiveOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setAcceptedOrders((prev) => {
+        const baru = { ...prev };
+        delete baru[orderId];
+        return baru;
+      });
+      await Notifications.cancelAllScheduledNotificationsAsync();
+    } catch (err) {
+      Alert.alert("Gagal", "Tidak dapat membatalkan order. Coba lagi.");
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
   // Menjalankan verifikasi pra-syarat pemindaian sebelum perjalanan
   const inisiasiPemindaianNAB = (orderId) => {
     if (!permission) return;
@@ -306,6 +395,7 @@ export default function DriverScreen() {
 
     setUpdatingOrderId(orderId);
     try {
+      await Notifications.cancelAllScheduledNotificationsAsync();
       await supabase
         .from("orders")
         .update({ status: "in_progress", started_at: new Date().toISOString() })
@@ -363,9 +453,11 @@ export default function DriverScreen() {
         "Bukti foto penyelesaian di pabrik wajib dilampirkan.",
       );
 
-    const tonase = parseFloat((tonaseInputs[orderId] || "").replace(",", "."));
-    if (isNaN(tonase) || tonase <= 0)
+    const kg = parseFloat((tonaseInputs[orderId] || "").replace(",", "."));
+    if (isNaN(kg) || kg <= 0)
       return Alert.alert("Peringatan", "Masukkan beban tonase yang valid.");
+
+    const tonase = kg / 1000;
 
     setUpdatingOrderId(orderId);
 
@@ -555,7 +647,9 @@ export default function DriverScreen() {
           {activeTab === "beranda" ? (
             <>
               <View style={styles.header}>
-                <Text style={styles.greetingText}>Dashboard Supir</Text>
+                <Text style={styles.greetingText}>
+                  Halo, {driver.name || "Memuat..."}
+                </Text>
                 <Text style={styles.dateText}>
                   {new Date().toLocaleDateString("id-ID", {
                     weekday: "long",
@@ -683,7 +777,44 @@ export default function DriverScreen() {
                           </Text>
                         )}
 
-                        {order.status === "assigned" ? (
+                        {order.status === "assigned" &&
+                        !acceptedOrders[order.id] ? (
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              marginTop: 15,
+                              justifyContent: "space-between",
+                            }}
+                          >
+                            <TouchableOpacity
+                              style={[
+                                styles.actionBtn,
+                                {
+                                  backgroundColor: "#EF4444",
+                                  flex: 1,
+                                  marginRight: 5,
+                                },
+                              ]}
+                              onPress={() => handleTolakOrder(order.id)}
+                            >
+                              <Text style={styles.btnText}>Tolak</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[
+                                styles.actionBtn,
+                                {
+                                  backgroundColor: "#10B981",
+                                  flex: 1,
+                                  marginLeft: 5,
+                                },
+                              ]}
+                              onPress={() => handleTerimaOrder(order.id)}
+                            >
+                              <Text style={styles.btnText}>Ambil Order</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : order.status === "assigned" &&
+                          acceptedOrders[order.id] ? (
                           <View>
                             <Text
                               style={{
@@ -691,6 +822,7 @@ export default function DriverScreen() {
                                 color: "#64748B",
                                 marginBottom: 8,
                                 textAlign: "center",
+                                marginTop: 10,
                               }}
                             >
                               Validasi dokumen NAB fisik diperlukan sebelum
@@ -735,7 +867,7 @@ export default function DriverScreen() {
                               </Text>
                             </TouchableOpacity>
                             <Text style={[styles.label, { marginTop: 10 }]}>
-                              2. Input Tonase PKS (Ton)
+                              2. Input Tonase PKS (Kg)
                             </Text>
                             <TextInput
                               style={styles.input}
@@ -833,7 +965,7 @@ export default function DriverScreen() {
                       Afdeling {item.afdeling} - Blok {item.blok}
                     </Text>
                     <Text style={styles.rekapTonase}>
-                      Tonase {item.tonase} Ton
+                      Muatan {item.tonase} Kg
                     </Text>
                     <View style={styles.rekapDivider} />
                     <View style={styles.rekapEarnContainer}>
