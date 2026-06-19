@@ -39,6 +39,10 @@ Notifications.setNotificationHandler({
 export default function DriverScreen() {
   const [activeTab, setActiveTab] = useState("beranda");
   const [isOnline, setIsOnline] = useState(false);
+  const isOnlineRef = useRef(isOnline);
+  useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
   const [updating, setUpdating] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -122,7 +126,7 @@ export default function DriverScreen() {
   useEffect(() => {
     const unsubscribeNetInfo = NetInfo.addEventListener((state) => {
       setIsConnected(state.isConnected);
-      if (state.isConnected && isOnline) {
+      if (state.isConnected && isOnlineRef.current) {
         jalankanSinkronisasiLatarBelakang();
       }
     });
@@ -223,7 +227,7 @@ export default function DriverScreen() {
           },
           (payload) => {
             const updatedProfile = payload.new;
-            if (updatedProfile.is_online === false) {
+            if (updatedProfile.is_online === false && isOnlineRef.current === true) {
               setIsOnline(false);
               setActiveOrders([]);
               if (manualOfflineRef.current) manualOfflineRef.current = false;
@@ -232,7 +236,7 @@ export default function DriverScreen() {
                   "Penonaktifan Sistem",
                   "Karena keterlambatan respons, sistem telah mengalihkan order ke armada lain.",
                 );
-            } else {
+            } else if (updatedProfile.is_online === true) {
               setIsOnline(true);
             }
           },
@@ -969,7 +973,7 @@ export default function DriverScreen() {
                       Afdeling {item.afdeling} - Blok {item.blok}
                     </Text>
                     <Text style={styles.rekapTonase}>
-                      Muatan {item.tonase} Kg
+                      Muatan {item.tonase} T
                     </Text>
                     <View style={styles.rekapDivider} />
                     <View style={styles.rekapEarnContainer}>
