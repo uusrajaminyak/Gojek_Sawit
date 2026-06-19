@@ -170,6 +170,10 @@ export default function DriverScreen() {
 
               if (updatedOrder.driver_id !== userId) return;
 
+              if (updatedOrder.status === "completed") {
+                refreshData(userId);
+              }
+
               if (
                 updatedOrder.status === "assigned" ||
                 updatedOrder.status === "in_progress"
@@ -318,7 +322,7 @@ export default function DriverScreen() {
   };
 
   const handleTerimaOrder = async (orderId) => {
-    setAcceptedOrderS((prev) => ({ ...prev, [orderId]: true }));
+    setAcceptedOrders((prev) => ({ ...prev, [orderId]: true }));
     jadwalkanNotifikasi30Menit(orderId);
     Alert.alert(
       "Tugas Diterima",
@@ -648,7 +652,7 @@ export default function DriverScreen() {
             <>
               <View style={styles.header}>
                 <Text style={styles.greetingText}>
-                  Halo, {driver.name || "Memuat..."}
+                  Halo, {driverName || "Memuat..."}
                 </Text>
                 <Text style={styles.dateText}>
                   {new Date().toLocaleDateString("id-ID", {
