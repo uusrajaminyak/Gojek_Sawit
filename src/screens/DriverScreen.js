@@ -721,7 +721,7 @@ export default function DriverScreen() {
               )}
 
               <View style={styles.statsCard}>
-                <Text style={styles.statsTitle}>Performa Hari Ini</Text>
+                <Text style={styles.statsTitle}>Performa</Text>
                 <View style={styles.statsRow}>
                   <View style={styles.statItem}>
                     <Text style={styles.statValue}>
@@ -737,7 +737,7 @@ export default function DriverScreen() {
                 </View>
                 <View style={styles.gajiContainer}>
                   <Text style={styles.gajiLabel}>
-                    Estimasi Pendapatan Harian
+                    Estimasi Pendapatan
                   </Text>
                   <Text style={styles.gajiAmount}>
                     Rp{" "}
