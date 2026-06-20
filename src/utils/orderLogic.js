@@ -13,7 +13,7 @@ export const fetchKeraniData = async (keraniId) => {
     .gte("created_at", startOfMonth.toISOString())
     .order("created_at", { ascending: false });
 
-  if (error || !orders) return { active: [], history: [] };
+  if (error || !orders) return null;
 
   const driverIds = [
     ...new Set(orders.map((o) => o.driver_id).filter(Boolean)),

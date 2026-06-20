@@ -77,9 +77,11 @@ export default function OrderScreen() {
   }, []);
 
   const refreshData = useCallback(async (userId) => {
-    const { active, history } = await fetchKeraniData(userId);
-    setActiveOrders(active);
-    setHistoryOrders(history);
+    const result = await fetchKeraniData(userId);
+    if (result) {
+      setActiveOrders(result.active);
+      setHistoryOrders(result.history);
+    }
   }, []);
 
   useEffect(() => {
