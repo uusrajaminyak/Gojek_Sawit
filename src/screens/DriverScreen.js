@@ -51,6 +51,26 @@ export default function DriverScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const [activeOrders, setActiveOrders] = useState([]);
+  const [poolOrders, setPoolOrders] = useState([]);
+  const handleAmbilOrderPool = async (orderId) => {
+    const userId = await getUserId();
+    const { error } = await supabase
+      .from("orders")
+      .update({ driver_id: userId, status: "assigned" })
+      .eq("id", orderId);
+    if (error) {
+      Alert.alert(
+        "Gagal Ambil Order",
+        "Terdapat kendala jaringan atau order sudah diambil.",
+      );
+    } else {
+      Alert.alert(
+        "Sukses",
+        "Anda berhasil mengambil order ini. Cek di Beranda untuk detailnya.",
+      );
+      refreshData(userId);
+    }
+  };
   const [tonaseInputs, setTonaseInputs] = useState({});
   const [orderPhotos, setOrderPhotos] = useState({});
   const [hariIniData, setHariIniData] = useState({
@@ -163,40 +183,72 @@ export default function DriverScreen() {
             event: "*",
             schema: "public",
             table: "orders",
-            filter: `driver_id=eq.${userId}`,
           },
           (payload) => {
             if (
               payload.eventType === "INSERT" ||
               payload.eventType === "UPDATE"
             ) {
-              const updatedOrder = payload.new;
+              const order = payload.new;
 
-              if (updatedOrder.driver_id !== userId) return;
+              if (order.status === "broadcast") {
+                setPoolOrders((prev) => {
+                  const exists = prev.find((o) => o.id === order.id);
+                  return exists
+                    ? prev.map((o) => (o.id === order.id ? order : o))
+                    : [...prev, order];
+                });
+                setActiveOrders((prev) =>
+                  prev.filter((o) => o.id !== order.id),
+                );
+                return;
+              }
 
-              if (updatedOrder.status === "completed") {
+              setPoolOrders((prev) => prev.filter((o) => o.id !== order.id));
+
+              if (
+                payload.eventType === "UPDATE" &&
+                payload.old &&
+                payload.old.driver_id === userId &&
+                order.driver_id === null
+              ) {
+                Alert.alert(
+                  "Waktu Habis!",
+                  "Anda terlalu lama merespons. Orderan telah disebarkan.",
+                );
+                setActiveOrders((prev) =>
+                  prev.filter((o) => o.id !== order.id),
+                );
+                return;
+              }
+
+              if (order.driver_id !== userId) return;
+
+              if (order.status === "completed") {
                 refreshData(userId);
               }
 
               if (
-                updatedOrder.status === "assigned" ||
-                updatedOrder.status === "in_progress"
+                order.status === "pending" ||
+                order.status === "assigned" ||
+                order.status === "in_progress"
               ) {
                 setActiveOrders((prev) => {
-                  const exists = prev.find((o) => o.id === updatedOrder.id);
+                  const exists = prev.find((o) => o.id === order.id);
                   return exists
-                    ? prev.map((o) =>
-                        o.id === updatedOrder.id ? updatedOrder : o,
-                      )
-                    : [...prev, updatedOrder];
+                    ? prev.map((o) => (o.id === order.id ? order : o))
+                    : [...prev, order];
                 });
               } else {
                 setActiveOrders((prev) =>
-                  prev.filter((o) => o.id !== updatedOrder.id),
+                  prev.filter((o) => o.id !== order.id),
                 );
               }
             } else if (payload.eventType === "DELETE") {
               setActiveOrders((prev) =>
+                prev.filter((o) => o.id !== payload.old.id),
+              );
+              setPoolOrders((prev) =>
                 prev.filter((o) => o.id !== payload.old.id),
               );
             }
@@ -227,7 +279,10 @@ export default function DriverScreen() {
           },
           (payload) => {
             const updatedProfile = payload.new;
-            if (updatedProfile.is_online === false && isOnlineRef.current === true) {
+            if (
+              updatedProfile.is_online === false &&
+              isOnlineRef.current === true
+            ) {
               setIsOnline(false);
               setActiveOrders([]);
               if (manualOfflineRef.current) manualOfflineRef.current = false;
@@ -736,9 +791,7 @@ export default function DriverScreen() {
                   </View>
                 </View>
                 <View style={styles.gajiContainer}>
-                  <Text style={styles.gajiLabel}>
-                    Estimasi Pendapatan
-                  </Text>
+                  <Text style={styles.gajiLabel}>Estimasi Pendapatan</Text>
                   <Text style={styles.gajiAmount}>
                     Rp{" "}
                     {Math.round(hariIniData.totalGaji).toLocaleString("id-ID")}

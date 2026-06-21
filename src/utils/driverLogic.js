@@ -13,24 +13,27 @@ export const calculateTodayStats = async (userId) => {
   const { data: blokData } = await supabase
     .from("afdeling_blok")
     .select("afdeling, blok, jarak_km");
+
   const distanceMap = {};
-  if (blokData)
+  if (blokData) {
     blokData.forEach(
       (b) =>
         (distanceMap[
           `${b.afdeling.trim().toUpperCase()}_${b.blok.trim().toUpperCase()}`
         ] = Number(b.jarak_km)),
     );
+  }
 
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
   const { data: rits } = await supabase
     .from("orders")
-    .select("afdeling, blok, tonase_aktual")
+    .select("afdeling, blok, tonase_aktual, completed_at")
     .eq("driver_id", userId)
     .eq("status", "completed")
-    .gte("completed_at", startOfDay.toISOString());
+    .gte("completed_at", startOfDay.toISOString())
+    .order("completed_at", { ascending: true });
 
   let akumulasiHK = 0;
   let totalPremi = 0;
@@ -39,23 +42,39 @@ export const calculateTodayStats = async (userId) => {
   const totalRit = rits ? rits.length : 0;
   const isHariLibur = new Date().getDay() === 0;
 
-  if (rits) {
+  if (rits && rits.length > 0) {
+    const ritPenentuBasis = rits.slice(0, 3);
+    let totalJarakBasis = 0;
+
+    ritPenentuBasis.forEach((rit) => {
+      const dbAfd = rit.afdeling.replace(/^O/, "").trim().toUpperCase();
+      const dbBlok = rit.blok.trim().toUpperCase();
+      totalJarakBasis += distanceMap[`${dbAfd}_${dbBlok}`] || 0;
+    });
+
+    const avgJarak = totalJarakBasis / ritPenentuBasis.length;
+
+    let basisTon = 0;
+    if (avgJarak <= 10) {
+      basisTon = 25;
+    } else if (avgJarak > 10 && avgJarak <= 20) {
+      basisTon = 18;
+    } else {
+      basisTon = 13;
+    }
+
     for (const rit of rits) {
       const dbAfd = rit.afdeling.replace(/^O/, "").trim().toUpperCase();
       const dbBlok = rit.blok.trim().toUpperCase();
-      const jarakKm = distanceMap[`${dbAfd}_${dbBlok}`] || 0;
+      const jarakAsli = distanceMap[`${dbAfd}_${dbBlok}`] || 0;
 
-      let basisTon = 0,
-        tarifPremi = 0;
-      if (jarakKm <= 10) {
-        basisTon = 25;
-        tarifPremi = 7000;
-      } else if (jarakKm > 10 && jarakKm <= 20) {
-        basisTon = 18;
-        tarifPremi = isHariLibur ? 9000 : 8500;
+      let tarifPremiRitIni = 0;
+      if (jarakAsli <= 10) {
+        tarifPremiRitIni = 7000;
+      } else if (jarakAsli > 10 && jarakAsli <= 20) {
+        tarifPremiRitIni = isHariLibur ? 9000 : 8500;
       } else {
-        basisTon = 13;
-        tarifPremi = isHariLibur ? 11000 : 10000;
+        tarifPremiRitIni = isHariLibur ? 11000 : 10000;
       }
 
       const tonase = rit.tonase_aktual || 0;
@@ -65,13 +84,18 @@ export const calculateTodayStats = async (userId) => {
         const hkRit = tonase / basisTon;
         const prevHK = akumulasiHK;
         akumulasiHK += hkRit;
+
         if (prevHK < 1 && akumulasiHK >= 1) totalGajiPokok = 157559;
-        if (prevHK >= 1) totalPremi += tonase * tarifPremi;
-        else if (akumulasiHK > 1)
-          totalPremi += (akumulasiHK - 1) * basisTon * tarifPremi;
+
+        if (prevHK >= 1) {
+          totalPremi += tonase * tarifPremiRitIni;
+        } else if (akumulasiHK > 1) {
+          totalPremi += (akumulasiHK - 1) * basisTon * tarifPremiRitIni;
+        }
       }
     }
   }
+
   return {
     tonase: totalTonase,
     totalRit,

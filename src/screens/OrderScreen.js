@@ -84,6 +84,46 @@ export default function OrderScreen() {
     }
   }, []);
 
+  const handleStaleAction = (orderId) => {
+    Alert.alert(
+      "Orderan Terbengkalai",
+      "Orderan ini sudah 1x24 jam tidak diambil oleh armada manapun. Apa yang ingin Anda lakukan?",
+      [
+        { text: "Batal (Tutup)", style: "cancel" },
+        {
+          text: "Hapus Order",
+          style: "destructive",
+          onPress: async () => {
+            await supabase
+              .from("orders")
+              .update({ status: "cancelled" })
+              .eq("id", orderId);
+            refreshData(); 
+          },
+        },
+        {
+          text: "Restart (Cari Supir Baru)",
+          onPress: async () => {
+            await supabase
+              .from("orders")
+              .update({
+                status: "pending",
+                driver_id: null,
+                created_at: new Date().toISOString(), 
+              })
+              .eq("id", orderId);
+
+            Alert.alert(
+              "Di-restart!",
+              "Sistem sedang mencari prioritas supir baru...",
+            );
+            refreshData();
+          },
+        },
+      ],
+    );
+  };
+
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
       setIsConnected(state.isConnected);
@@ -716,7 +756,13 @@ export default function OrderScreen() {
                   <Text style={styles.emptyText}>Belum ada order aktif.</Text>
                 ) : (
                   activeOrders.map((order) => (
-                    <View key={order.id} style={styles.activeCard}>
+                    <View 
+                      key={order.id} 
+                      style={[
+                        styles.activeCard, 
+                        order.status === 'stale' && { backgroundColor: '#ffebee', borderColor: 'red', borderWidth: 1 }
+                      ]}
+                    >
                       <Text style={styles.activeStatus}>
                         {getStatusText(order.status)}
                       </Text>
@@ -727,6 +773,30 @@ export default function OrderScreen() {
                       <Text style={styles.orderInfo}>
                         Estimasi Muatan: {order.estimasi_tonase} Ton
                       </Text>
+
+                      {/* TOMBOL TINDAKAN UNTUK ORDER STALE (EXPIRED 24 JAM) */}
+                      {order.status === "stale" && (
+                        <TouchableOpacity
+                          style={{
+                            marginTop: 12,
+                            backgroundColor: "#DC2626",
+                            padding: 10,
+                            borderRadius: 8,
+                            alignItems: "center",
+                          }}
+                          onPress={() => handleStaleAction(order.id)}
+                        >
+                          <Text
+                            style={{
+                              color: "#FFF",
+                              fontWeight: "bold",
+                              fontSize: 13,
+                            }}
+                          >
+                            TINDAKAN DIPERLUKAN (RESTART/HAPUS)
+                          </Text>
+                        </TouchableOpacity>
+                      )}
 
                       {/* IMPLEMENTASI UTAMA FITUR 3: Tombol Pembatalan Darurat */}
                       {["assigned", "in_progress"].includes(order.status) && (
