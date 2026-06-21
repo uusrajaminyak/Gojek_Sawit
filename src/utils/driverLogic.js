@@ -80,17 +80,21 @@ export const calculateTodayStats = async (userId) => {
       const tonase = rit.tonase_aktual || 0;
       totalTonase += tonase;
 
-      if (basisTon > 0) {
-        const hkRit = tonase / basisTon;
-        const prevHK = akumulasiHK;
-        akumulasiHK += hkRit;
+      if (isHariLibur) {
+        totalPremi += tonase * tarifPremiRitIni;
+      } else {
+        if (basisTon > 0) {
+          const hkRit = tonase / basisTon;
+          const prevHK = akumulasiHK;
+          akumulasiHK += hkRit;
 
-        if (prevHK < 1 && akumulasiHK >= 1) totalGajiPokok = 157559;
+          if (prevHK < 1 && akumulasiHK >= 1) totalGajiPokok = 157559;
 
-        if (prevHK >= 1) {
-          totalPremi += tonase * tarifPremiRitIni;
-        } else if (akumulasiHK > 1) {
-          totalPremi += (akumulasiHK - 1) * basisTon * tarifPremiRitIni;
+          if (prevHK >= 1) {
+            totalPremi += tonase * tarifPremiRitIni;
+          } else if (akumulasiHK > 1) {
+            totalPremi += (akumulasiHK - 1) * basisTon * tarifPremiRitIni;
+          }
         }
       }
     }
