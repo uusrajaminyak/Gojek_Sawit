@@ -40,7 +40,6 @@ export const calculateTodayStats = async (userId) => {
   let totalGajiPokok = 0;
   let totalTonase = 0;
   const totalRit = rits ? rits.length : 0;
-  const isHariLibur = new Date().getDay() === 0;
 
   if (rits && rits.length > 0) {
     const ritPenentuBasis = rits.slice(0, 3);
@@ -67,6 +66,8 @@ export const calculateTodayStats = async (userId) => {
       const dbAfd = rit.afdeling.replace(/^O/, "").trim().toUpperCase();
       const dbBlok = rit.blok.trim().toUpperCase();
       const jarakAsli = distanceMap[`${dbAfd}_${dbBlok}`] || 0;
+      const ritDate = new Date(rit.completed_at);
+      const isHariLibur = ritDate.getDay() === 0;
 
       let tarifPremiRitIni = 0;
       if (jarakAsli <= 10) {
@@ -112,17 +113,20 @@ export const loadMonthlyRecap = async (userId) => {
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
+
   const { data: blokData } = await supabase
     .from("afdeling_blok")
     .select("afdeling, blok, jarak_km");
+  
   const distanceMap = {};
-  if (blokData)
+  if (blokData) {
     blokData.forEach(
       (b) =>
         (distanceMap[
           `${b.afdeling.trim().toUpperCase()}_${b.blok.trim().toUpperCase()}`
         ] = Number(b.jarak_km)),
     );
+  }
 
   const { data: rits } = await supabase
     .from("orders")
@@ -130,52 +134,88 @@ export const loadMonthlyRecap = async (userId) => {
     .eq("driver_id", userId)
     .eq("status", "completed")
     .gte("completed_at", startOfMonth.toISOString())
-    .order("completed_at", { ascending: true });
+    .order("completed_at", { ascending: true }); 
+
   if (!rits) return [];
 
   const grouped = {};
   rits.forEach((r) => {
-    const dateStr = new Date(r.completed_at).toLocaleDateString("en-CA");
+    const ritDate = new Date(r.completed_at);
+    const wibDate = new Date(ritDate.getTime() + 7 * 60 * 60 * 1000);
+    const dateStr = wibDate.toISOString().split("T")[0]; 
+    
     if (!grouped[dateStr]) grouped[dateStr] = [];
     grouped[dateStr].push(r);
   });
 
   const recapList = [];
+
   Object.keys(grouped)
     .sort((a, b) => b.localeCompare(a))
-    .forEach((date) => {
-      const dayRits = grouped[date];
+    .forEach((dateStr) => {
+      const dayRits = grouped[dateStr];
+      const firstRitDate = new Date(dayRits[0].completed_at);
+      const firstWibDate = new Date(firstRitDate.getTime() + 7 * 60 * 60 * 1000);
+      const isLibur = firstWibDate.getUTCDay() === 0;
+
+      const ritPenentuBasis = dayRits.slice(0, 3);
+      let totalJarakBasis = 0;
+
+      ritPenentuBasis.forEach((rit) => {
+        const dbAfd = rit.afdeling.replace(/^O/, "").trim().toUpperCase();
+        const dbBlok = rit.blok.trim().toUpperCase();
+        totalJarakBasis += distanceMap[`${dbAfd}_${dbBlok}`] || 0;
+      });
+
+      const avgJarak = totalJarakBasis / ritPenentuBasis.length;
+      let basisTonHarian = 0;
+
+      if (avgJarak <= 10) {
+        basisTonHarian = 25;
+      } else if (avgJarak > 10 && avgJarak <= 20) {
+        basisTonHarian = 18;
+      } else {
+        basisTonHarian = 13;
+      }
+
       let akumulasiHK = 0;
-      const isLibur = new Date(date).getDay() === 0;
+
       dayRits.forEach((rit) => {
         const dbAfd = rit.afdeling.replace(/^O/, "").trim().toUpperCase();
         const dbBlok = rit.blok.trim().toUpperCase();
-        const jarakKm = distanceMap[`${dbAfd}_${dbBlok}`] || 0;
-        let basisTon = 0,
-          tarifPremi = 0;
-        if (jarakKm <= 10) {
-          basisTon = 25;
-          tarifPremi = 7000;
-        } else if (jarakKm > 10 && jarakKm <= 20) {
-          basisTon = 18;
-          tarifPremi = isLibur ? 9000 : 8500;
+        const jarakAsli = distanceMap[`${dbAfd}_${dbBlok}`] || 0;
+
+        let tarifPremiRitIni = 0;
+        if (jarakAsli <= 10) {
+          tarifPremiRitIni = 7000;
+        } else if (jarakAsli > 10 && jarakAsli <= 20) {
+          tarifPremiRitIni = isLibur ? 9000 : 8500;
         } else {
-          basisTon = 13;
-          tarifPremi = isLibur ? 11000 : 10000;
+          tarifPremiRitIni = isLibur ? 11000 : 10000;
         }
 
         const tonase = rit.tonase_aktual || 0;
-        const hkRit = basisTon > 0 ? tonase / basisTon : 0;
-        const prevHK = akumulasiHK;
-        akumulasiHK += hkRit;
         let premiumRitIni = 0;
         let gajiPokokRitIni = 0;
 
-        if (basisTon > 0) {
-          if (prevHK < 1 && akumulasiHK >= 1) gajiPokokRitIni = 157559;
-          if (prevHK >= 1) premiumRitIni = tonase * tarifPremi;
-          else if (akumulasiHK > 1)
-            premiumRitIni = (akumulasiHK - 1) * basisTon * tarifPremi;
+        if (isLibur) {
+          premiumRitIni = tonase * tarifPremiRitIni;
+        } else {
+          if (basisTonHarian > 0) {
+            const hkRit = tonase / basisTonHarian;
+            const prevHK = akumulasiHK;
+            akumulasiHK += hkRit;
+
+            if (prevHK < 1 && akumulasiHK >= 1) {
+              gajiPokokRitIni = 157559; 
+            }
+
+            if (prevHK >= 1) {
+              premiumRitIni = tonase * tarifPremiRitIni;
+            } else if (akumulasiHK > 1) {
+              premiumRitIni = (akumulasiHK - 1) * basisTonHarian * tarifPremiRitIni;
+            }
+          }
         }
 
         recapList.push({
@@ -188,6 +228,7 @@ export const loadMonthlyRecap = async (userId) => {
         });
       });
     });
+
   recapList.sort((a, b) => b.date - a.date);
   return recapList;
 };
